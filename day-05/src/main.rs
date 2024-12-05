@@ -49,10 +49,10 @@ impl Problem {
 
     fn solve2(&self) {
         let res: usize = self.orders.iter()
-            .filter(|order| self.is_order_incorrect(order))
-            .map(|order| self.put_in_order(order))
-            .map(|o| o[o.len() / 2]) // Directly access the middle value
-            .sum();
+                                    .filter(|order| self.is_order_incorrect(order))
+                                    .map(|order| self.put_in_order(order))
+                                    .map(|o| o[o.len() / 2]) // Directly access the middle value
+                                    .sum();
         println!("you get {} if you add up the middle page numbers after correctly ordering just those updates",
                  res)
     }
@@ -61,20 +61,12 @@ impl Problem {
         let mut todo_list = order.clone();
         let mut ordered_list: Vec<usize> = Vec::new();
 
-        while !todo_list.is_empty() {
-            // Find an entry that either:
-            // - Has no key in `reverse_rules`, OR
-            // - None of the values in `reverse_rules` for that key are in `todo_list`
-            let next = *todo_list.iter().find(|&&item| {
-                self.reverse_rules.get(&item).map_or(true, |dependencies| {
-                    dependencies.iter().all(|&dep| !todo_list.contains(&dep))
-                })
-            }).unwrap();
-
-            // Remove `next` from `todo_list`
+        while let Some(&next) = todo_list.iter().find(|&&item| {
+            self.reverse_rules.get(&item).map_or(true, |deps| {
+                deps.iter().all(|&dep| !todo_list.contains(&dep))
+            })
+        }) {
             todo_list.retain(|&x| x != next);
-
-            // Add `next` to `ordered_list`
             ordered_list.push(next);
         }
 
