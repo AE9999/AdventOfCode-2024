@@ -17,31 +17,20 @@ fn main() -> io::Result<()> {
 }
 
 fn solve1(problem: &Problem) {
-    let start_position = problem.start_position();
-    let mut visited_positions: HashSet<Point> = vec![start_position.clone()].into_iter().collect();
-    let mut state = State::new(start_position, North);
-
-    while problem.is_on_map(&state.point) {
-        visited_positions.insert(state.point.clone());
-        let mut next_state = state.step();
-        if problem.is_obstructed(&next_state.point) {
-            next_state = state.rotate()
-        }
-        state = next_state
-    }
 
     println!("{} distinct positions will the guard visit before leaving the mapped area",
-             visited_positions.len())
+             problem.calculate_visited_points().len())
 
 }
 
 fn solve2(problem: &Problem) {
-    let res = problem.iter_points()
-                                   .filter(|point| {
-                                       problem.can_be_made_obstructed(point)
+    let res = problem.calculate_visited_points()
+                            .iter()
+                            .filter(|point| {
+                                    problem.can_be_made_obstructed(point)
                                        && problem.make_point_obstructed(point).results_in_loop()
-                                    })
-                                   .count();
+                             })
+                            .count();
     println!("{} different positions could you choose for this obstruction.", res)
 }
 
@@ -115,6 +104,23 @@ impl Problem {
         }
 
         false
+    }
+
+    fn calculate_visited_points(&self) -> HashSet<Point>   {
+        let start_position = self.start_position();
+        let mut visited_positions: HashSet<Point> = vec![start_position.clone()].into_iter().collect();
+        let mut state = State::new(start_position, North);
+
+        while self.is_on_map(&state.point) {
+            visited_positions.insert(state.point.clone());
+            let mut next_state = state.step();
+            if self.is_obstructed(&next_state.point) {
+                next_state = state.rotate()
+            }
+            state = next_state
+        }
+
+        visited_positions
     }
 }
 
