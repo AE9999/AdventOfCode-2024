@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use itertools::Itertools;
 use std::fs::File;
 use std::io::{self, BufReader, BufRead};
 use std::env;
@@ -68,7 +69,7 @@ impl Problem {
     }
 
     fn is_obstructed(&self, point: &Point) -> bool {
-        self.is_on_map(point) && self.get_char_on_point(point) == Some('#')
+        self.get_char_on_point(point) == Some('#')
     }
 
     fn start_position(&self) -> Point {
@@ -76,7 +77,7 @@ impl Problem {
     }
 
     fn can_be_made_obstructed(&self, point: &Point) -> bool {
-        self.is_on_map(point) && self.get_char_on_point(point) == Some('.')
+        self.get_char_on_point(point) == Some('.')
     }
 
     fn make_point_obstructed(&self, point: &Point) -> Self {
