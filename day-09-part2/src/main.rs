@@ -15,62 +15,62 @@ fn main() -> io::Result<()> {
 }
 
 fn solve(mut doubly_linked_list: DoublyLinkedList) {
+    
+    let mut keys: Vec<_> = doubly_linked_list.file_id_2_node.keys().copied().collect();
 
-    loop {
-        let finger_id = doubly_linked_list.finger.unwrap();
-        let tail_id = doubly_linked_list.tail.unwrap();
+    // Sort the keys in descending order
+    keys.sort_by(|a, b| b.cmp(a));
 
-        if finger_id == tail_id {
-            break;
-        }
+    for key in keys {
+        doubly_linked_list.finger_reset();
 
-        if !doubly_linked_list.is_free(finger_id) {
-            doubly_linked_list.finger_next();
-            continue;
-        }
+        loop {
+            let finger_id = doubly_linked_list.finger.unwrap();
+            let target_id = *doubly_linked_list.file_id_2_node.get(&key).unwrap();
 
-        if doubly_linked_list.is_free(tail_id) {
-            doubly_linked_list.pop();
-            continue;
-        }
+            if finger_id == target_id {
+                break;
+            }
 
-        let file_id_of_tail = doubly_linked_list.get_file_id(tail_id);
-        let amount_free_in_finger = doubly_linked_list.get_amount(finger_id);
-        let amount_of_items_in_tail =  doubly_linked_list.get_amount(tail_id);
+            if !doubly_linked_list.is_free(finger_id) {
+                doubly_linked_list.finger_next();
+                continue;
+            }
 
+            let file_id_of_target = doubly_linked_list.get_file_id(target_id);
+            let amount_free_in_finger = doubly_linked_list.get_amount(finger_id);
+            let amount_of_items_in_target =  doubly_linked_list.get_amount(target_id);
 
-        let amount_stored_in_finger =
-            if amount_free_in_finger >= amount_of_items_in_tail {
-                amount_of_items_in_tail
+            if amount_of_items_in_target > amount_free_in_finger {
+                doubly_linked_list.finger_next();
+                continue;
+            }
+
+            let amount_of_item_left_in_finger = amount_free_in_finger - amount_of_items_in_target;
+
+            doubly_linked_list.set_file_id(finger_id, file_id_of_target);
+            doubly_linked_list.set_amount(finger_id, amount_of_items_in_target);
+
+            if amount_of_item_left_in_finger > 0 {
+                doubly_linked_list.insert_after_finger(amount_of_item_left_in_finger, None);
+            }
+
+            let previous = doubly_linked_list.get_previous(target_id);
+            // TODO clear up free space
+            if doubly_linked_list.is_free(previous.id) {
+                let new_amount = amount_of_items_in_target + doubly_linked_list.get_amount(previous.id);
+                doubly_linked_list.set_amount(previous.id, new_amount);
+                doubly_linked_list.remove(target_id);
             } else {
-                amount_free_in_finger
-            };
-
-        let amount_of_item_left_in_tail = amount_of_items_in_tail - amount_stored_in_finger;
-        let amount_of_item_left_in_finger = amount_free_in_finger - amount_stored_in_finger;
-
-        doubly_linked_list.set_file_id(finger_id, file_id_of_tail);
-        doubly_linked_list.set_amount(finger_id, amount_stored_in_finger);
-
-        if amount_of_item_left_in_tail > 0 {
-            doubly_linked_list.set_amount(tail_id, amount_of_item_left_in_tail);
-        } else {
-            doubly_linked_list.pop();
-        }
-
-        if amount_of_item_left_in_finger > 0 {
-            doubly_linked_list.insert_after_finger(amount_of_item_left_in_finger, None);
-            doubly_linked_list.finger_next();
-            continue;
+                doubly_linked_list.set_free(target_id);
+            }
+            break;
         }
     }
 
-    doubly_linked_list.finger_reset();
-
-
     let mut checksome: usize = 0;
     let mut index: usize = 0;
-
+    doubly_linked_list.finger_reset();
     loop {
         let finger_id = doubly_linked_list.finger.unwrap();
         let tail_id = doubly_linked_list.tail.unwrap();
@@ -78,9 +78,11 @@ fn solve(mut doubly_linked_list: DoublyLinkedList) {
         let is_free = doubly_linked_list.is_free(finger_id);
         let amount = doubly_linked_list.get_amount(finger_id);
 
+
         if !is_free {
             let file_id = doubly_linked_list.get_file_id(finger_id);
             checksome += (index..index+amount).map(|i| file_id * i).sum::<usize>();
+        } else {
         }
 
         index += amount;
@@ -98,6 +100,7 @@ fn solve(mut doubly_linked_list: DoublyLinkedList) {
 
 #[derive(Debug, Clone)]
 struct Node {
+    id: usize,
     file_id: Option<usize>,
     amount: usize,
     prev: Option<usize>,
@@ -110,6 +113,8 @@ struct DoublyLinkedList {
     head: Option<usize>,
     tail: Option<usize>,
     finger: Option<usize>,
+    file_id_2_node: HashMap<usize, usize>
+
 }
 
 impl DoublyLinkedList {
@@ -119,6 +124,7 @@ impl DoublyLinkedList {
             head: None,
             tail: None,
             finger: None,
+            file_id_2_node: HashMap::new(),
         }
     }
 
@@ -128,6 +134,7 @@ impl DoublyLinkedList {
         let new_node = Node {
             file_id,
             amount,
+            id: new_id,
             prev: self.tail,
             next: None,
         };
@@ -145,18 +152,9 @@ impl DoublyLinkedList {
         if self.finger.is_none() {
             self.finger = Some(new_id);
         }
-    }
 
-    fn pop(&mut self) {
-        if let Some(tail_id) = self.tail {
-            if let Some(prev_id) = self.nodes.get(&tail_id).unwrap().prev {
-                self.nodes.get_mut(&prev_id).unwrap().next = None;
-                self.tail = Some(prev_id);
-            } else {
-                self.head = None;
-                self.tail = None;
-            }
-            //self.nodes.remove(&tail_id);
+        if file_id.is_some() {
+            self.file_id_2_node.insert(file_id.unwrap(), new_id);
         }
     }
 
@@ -171,6 +169,7 @@ impl DoublyLinkedList {
             let new_node = Node {
                 file_id,
                 amount,
+                id: new_id,
                 prev: Some(finger_id),
                 next: next_id,
             };
@@ -187,10 +186,34 @@ impl DoublyLinkedList {
         }
     }
 
+    fn remove(&mut self, id: usize) {
+        let node = self.nodes.get(&id).clone().unwrap().clone();
+
+        if let Some(prev_id) = node.prev {
+                    self.nodes.get_mut(&prev_id).unwrap().next = node.next;
+        }
+
+        if let Some(next_id) = node.next {
+            self.nodes.get_mut(&next_id).unwrap().prev = node.prev;
+        }
+
+        if id == self.head.unwrap() {
+            self.head = node.next;
+        }
+
+        if id == self.tail.unwrap() {
+            self.tail = node.prev;
+        }
+    }
+
     fn finger_next(&mut self) {
         if let Some(finger_id) = self.finger {
             self.finger = self.nodes.get(&finger_id).unwrap().next;
         }
+    }
+
+    fn get_previous(&self, id: usize) -> &Node {
+        self.nodes.get(&id).unwrap()
     }
 
     fn finger_reset(&mut self) {
@@ -215,6 +238,10 @@ impl DoublyLinkedList {
 
     fn set_file_id(&mut self, id: usize, file_id: usize ) {
         self.nodes.get_mut(&id).unwrap().file_id = Some(file_id);
+    }
+
+    fn set_free(&mut self, id: usize) {
+        self.nodes.get_mut(&id).unwrap().file_id = None;
     }
 }
 
