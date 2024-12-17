@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{self, BufReader, BufRead};
 use std::env;
+use itertools::Itertools;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -8,15 +9,48 @@ fn main() -> io::Result<()> {
 
     let problem = read_input(input)?;
 
-    solve(problem.clone());
+    solve1(problem.clone());
+    solve2(problem.clone());
 
     Ok(())
 }
 
-fn solve(mut problem: Problem) {
+fn solve1(mut problem: Problem) {
     problem.run();
     problem.dump_output();
 }
+
+fn solve2(problem: Problem) {
+    let mut digits = problem.program.iter().clone().collect::<Vec<_>>();
+    digits.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let candidates =
+    (0..digits.len()).permutations(digits.len()).filter_map(|indices| {
+        println!("{:?}", indices);
+        let octal_value: String = indices.iter().map(|index| digits.get(*index).unwrap().to_string()).collect();
+        let decimal_value = from_octal(octal_value.as_str()).unwrap();
+        let mut p = problem.clone();
+        p.registers[0] = decimal_value;
+        p.run();
+
+        println!("decimal_value: {:?}, output:{:?} => program:{:?}..", decimal_value, p.output, p.program);
+
+        if p.output == p.program  {
+            Some(decimal_value)
+        }  else {
+            return None
+        }
+    }).collect::<Vec<_>>();
+    println!("Candidates => {:?}", candidates);
+}
+
+fn from_octal(octal: &str) -> Result<usize, std::num::ParseIntError> {
+    usize::from_str_radix(octal, 8)
+}
+
+// fn to_octal(n: usize) -> String {
+//     format!("{:o}", n)
+// }
 
 #[derive(Debug, Clone)]
 struct Problem {
