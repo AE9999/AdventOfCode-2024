@@ -1,5 +1,5 @@
 use std::cmp::{min, Ordering};
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufReader, BufRead};
 use std::env;
@@ -9,18 +9,19 @@ fn main() -> io::Result<()> {
     let input = &args[1];
 
     let problem = read_input(input)?;
-    solve1(&problem);
-
+    solve(&problem, 2, 100);
+    solve(&problem, 20, 100);
     Ok(())
 }
 
-fn solve1(problem: &Problem)  {
+fn solve(problem: &Problem, distance_cheat: usize, minimal_improvement: usize)  {
 
     let start_pos = problem.start_point();
 
     let end_pos = problem.end_point();
 
-    let start_state = State::new(vec![start_pos.clone()],
+    let start_state = State::new(start_pos.clone(),
+                                 0,
                                         None,
                                         start_pos.clone().distance(&end_pos));
 
@@ -32,8 +33,8 @@ fn solve1(problem: &Problem)  {
 
     while let Some(state) = to_do.pop() {
 
-        let location = state.path.last().unwrap().clone();
-        let path_len = state.path.len();
+        let location = state.position.clone();
+        let path_len = state.length.clone();
         let mut global_lb_mine = global_lbs.get(&state.cheated).unwrap_or(&usize::MAX);
 
         if location == end_pos {
@@ -47,6 +48,8 @@ fn solve1(problem: &Problem)  {
             explore_if_feasible(&state,
                                 &end_pos,
                                 &direction,
+                                &distance_cheat,
+                                &minimal_improvement,
                                 &mut local_ubs,
                                 &mut global_lbs,
                                 &problem)
@@ -57,7 +60,7 @@ fn solve1(problem: &Problem)  {
     }
 
     let normal_length = global_lbs.get(&None).unwrap();
-    
+
     let res = global_lbs.values()
                               .filter(|ub| *ub + 100 <= *normal_length)
                               .count();
@@ -69,10 +72,12 @@ fn solve1(problem: &Problem)  {
 fn explore_if_feasible(state: &State,
                        end_pos: &Point,
                        direction: &Direction,
+                       distance_cheat: &usize,
+                       minimal_improvement: &usize,
                        local_ubs: &mut HashMap<(Point, Cheat), usize>,
                        global_lbs: &mut HashMap<Cheat, usize>,
                        problem: &Problem) -> Option<Vec<State>> {
-    let current_position = state.path.last().unwrap();
+    let current_position = state.position.clone();
     let next_pos = current_position.add(&direction.to_dx_dy());
 
     let states_to_check =
@@ -80,34 +85,28 @@ fn explore_if_feasible(state: &State,
             if state.cheated.is_some() {
                 return None
             }
-            to_cheating_endpoints(direction, current_position).iter()
-                                                              .filter(|endpoint| {
-                                                                  problem.is_on_map(endpoint)
-                                                                  && problem.get_char_on_point(&endpoint) != Some('#')
-                                                              })
-                                                              .map(|endpoint| {
-                                                                  let mut path= state.path.clone();
-                                                                  path.push(next_pos.clone());
-                                                                  path.push(endpoint.clone());
-                                                                  let cheated = Some((next_pos.clone(), endpoint.clone()));
-                                                                  let distance = endpoint.distance(&end_pos);
-                                                                  State::new(path,
-                                                                             cheated,
-                                                                             distance)
-                                                              })
-                                                              .collect()
+            problem.find_all_points_within_distance_of_point(&next_pos, distance_cheat -1)
+                   .iter()
+                   .map(|endpoint| {
+
+                      let cheated = Some((next_pos.clone(), endpoint.clone()));
+                      let distance = endpoint.distance(&end_pos);
+                      State::new(endpoint.clone(),
+                                 state.length + current_position.distance(endpoint),
+                                 cheated,
+                                 distance)
+                   })
+                  .collect()
         } else {
-            let mut current_path = state.path.clone();
-            current_path.push(next_pos.clone());
             let next_distance = end_pos.distance(&next_pos);
-            let next_state = State::new(current_path,
+            let next_state = State::new(next_pos.clone(),
+                                         state.length + 1,
                                               state.cheated.clone(),
                                               next_distance);
             vec!(next_state)
         };
 
     let mut next_states: Vec<State> = Vec::new();
-    let minimal_improvement = 100_usize;
 
     for state in states_to_check {
 
@@ -115,7 +114,7 @@ fn explore_if_feasible(state: &State,
 
         let global_lb_mine = global_lbs.get(&state.cheated).unwrap_or(&usize::MAX);
 
-        let current_ub = state.path.len() + state.distance;
+        let current_ub = state.length + state.distance;
 
         let global_lb_no_cheat = global_lbs.get(&None).unwrap_or(&usize::MAX);
         if  current_ub > *global_lb_mine
@@ -128,40 +127,17 @@ fn explore_if_feasible(state: &State,
         let local_ub_mine = local_ubs.get(&my_key).unwrap_or(&usize::MAX);
         let local_ub_no_secret = local_ubs.get(&no_secret_key).unwrap_or(&usize::MAX);
 
-        if &state.path.len() > local_ub_mine
-           || (has_cheated && &state.path.len() + minimal_improvement > *local_ub_no_secret) {
+        if &state.length > local_ub_mine
+           || (has_cheated && &state.length + minimal_improvement > *local_ub_no_secret) {
             continue;
         }
 
-        local_ubs.insert(my_key, state.path.len());
+        local_ubs.insert(my_key, state.length.clone());
         next_states.push(state.clone());
     }
 
     Some(next_states)
 }
-
-fn to_cheating_endpoints(direction: &Direction,
-                         point: &Point) -> Vec<Point> {
-    let other_move =
-        match &direction {
-            Direction::North => {
-                [Direction::North, Direction::East, Direction::West]
-            },
-            Direction::South => {
-                [Direction::South, Direction::East, Direction::West]
-            },
-            Direction::East => {
-                [Direction::North, Direction::South, Direction::East]
-            },
-            Direction::West => {
-                [Direction::North, Direction::South, Direction::West]
-            },
-        };
-    other_move.iter().map(|other_move| {
-        point.add(&direction.to_dx_dy()).add(&other_move.to_dx_dy())
-    }).collect()
-}
-
 
 #[derive(Clone)]
 struct Problem {
@@ -170,16 +146,18 @@ struct Problem {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct State {
-    path: Vec<Point>,
+    position: Point,
+    length: usize,
     cheated: Option<(Point, Point)>,
     distance: usize,
 }
 
 impl State {
-    fn new(path: Vec<Point>,
+    fn new(position: Point,
+           length: usize,
            cheated: Option<(Point, Point)>,
            distance: usize) -> Self {
-        Self { path, cheated, distance }
+        Self { position, length, cheated, distance }
     }
 }
 
@@ -221,11 +199,56 @@ impl Problem {
         self.iter_points().find(|p| self.get_char_on_point(p) == Some('E')).unwrap()
     }
 
+
+    fn find_all_points_within_distance_of_point(&self, point: &Point, max_distance: usize) -> Vec<Point> {
+        let mut results = Vec::new();
+
+        // Up and Right
+        for dx in 0..=max_distance as i32 {
+            for dy in 0..=(max_distance as i32 - dx) {
+                results.push(Point::new(point.x + dx, point.y + dy));
+            }
+        }
+
+        // Up and Left
+        for dx in 0..=max_distance as i32 {
+            for dy in 0..=(max_distance as i32 - dx) {
+                results.push(Point::new(point.x - dx, point.y + dy));
+            }
+        }
+
+        // Down and Left
+        for dx in 0..=max_distance as i32 {
+            for dy in 0..=(max_distance as i32 - dx) {
+                results.push(Point::new(point.x - dx, point.y - dy));
+            }
+        }
+
+        // Down and Right
+        for dx in 0..=max_distance as i32 {
+            for dy in 0..=(max_distance as i32 - dx) {
+                results.push(Point::new(point.x + dx, point.y - dy));
+            }
+        }
+
+        let r: HashSet<Point> =
+        results.into_iter().filter(|p|
+                              p != point
+                              && self.is_on_map(p)
+                              && self.get_char_on_point(p) != Some('#')).collect();
+
+        let r = r.into_iter().collect();
+
+        // println!("point: {:?} => {:?} ..", point, r);
+
+        r
+    }
+
 }
 
 type Cheat = Option<(Point, Point)>;
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
 struct Point {
     x: i32,
     y: i32
@@ -251,10 +274,19 @@ impl Ord for State {
         // First, compare the `cheated` field
         match (self.cheated.is_none(), other.cheated.is_none()) {
             (true, false) => Ordering::Greater,  // `self` has higher priority (cheated is None)
-            (false, true) => Ordering::Less, // `other` has higher priority (cheated is None)
+            (false, true) => Ordering::Less,    // `other` has higher priority (cheated is None)
             _ => {
-                // If both are None or both are Some, fall back to `distance`
-                other.distance.cmp(&self.distance)
+                let l = self.cheated.clone();
+                let r = self.cheated.clone();
+                // If both are None or both are Some, compare the `cheated` values if Some
+                if l.is_none() && r.is_none() {
+                    other.distance.cmp(&self.distance)
+                }  else {
+                    match l.unwrap().cmp(&r.unwrap()) {
+                        Ordering::Equal => other.distance.cmp(&self.distance), // Fall back to distance
+                        other_cmp => other_cmp, // Use the comparison result of cheated
+                    }
+                }
             }
         }
     }
