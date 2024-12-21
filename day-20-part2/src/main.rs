@@ -9,7 +9,7 @@ fn main() -> io::Result<()> {
     let input = &args[1];
 
     let problem = read_input(input)?;
-    solve(&problem, 2, 1);
+    solve(&problem, 20, 50);
     Ok(())
 }
 
@@ -101,7 +101,7 @@ fn solve_with_cheating(problem: &Problem,
     let mut ubs: HashMap<Point, usize> =  HashMap::new();
 
     while let Some(state) = to_do.pop() {
-        println!("Considering {:?}", state);
+        //println!("Considering {:?}", state);
 
 
         let location = state.position.clone();
@@ -262,7 +262,7 @@ impl Problem {
             next.push(next_point.clone());
             candidates.push(next.clone());
 
-            if candidates.len() < max_distance {
+            if candidates.len() < max_distance - 2 {
                 direction.others().iter().for_each(|direction| {
                     queue.push_back((next.clone(), direction.clone()));
                 })
@@ -271,9 +271,10 @@ impl Problem {
 
         let r: HashSet<Point> =
             candidates.into_iter()
-                   .filter(|p|
+                   .filter(|p|{
                         self.get_char_on_point(p.last().unwrap()).unwrap() != '#'
-                        && (p.len() < 2 || self.get_char_on_point(&p[p.len() - 2]).unwrap() == '#'))
+                        && (p.len() < 2 || self.get_char_on_point(&p[p.len() - 2]).unwrap() == '#')
+                   })
                 .map(|p| p.last().unwrap().clone())
                 .collect();
 
