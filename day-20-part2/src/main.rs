@@ -1,5 +1,5 @@
 use std::cmp::{min, Ordering};
-use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
 use std::io::{self, BufReader, BufRead};
 use std::env;
@@ -9,24 +9,40 @@ fn main() -> io::Result<()> {
     let input = &args[1];
 
     let problem = read_input(input)?;
-    solve(&problem, 20, 50);
+    solve(&problem, 20, 100);
     Ok(())
 }
 
 fn solve(problem: &Problem, distance_cheat: usize, minimal_improvement: usize)  {
+
     let shortest_points: HashMap<Point, Option<usize>> =
-        problem.iter_points().fold(HashMap::new(), |mut acc, point| {
-        acc.insert(point.clone(), solve_without_cheating(problem, &point, &problem.end_point()));
-        acc
+        problem.iter_points()
+               .filter(|point| problem.get_char_on_point(point) != Some('#'))
+               .fold(HashMap::new(), |mut acc, point| {
+            acc.insert(point.clone(), do_solve(problem,
+                                               &point,
+                                               &problem.end_point(),
+                                               None,
+                                               distance_cheat,
+                                               minimal_improvement));
+            acc
     });
 
-    solve_with_cheating(problem,
-                        &shortest_points,
-                        distance_cheat,
-                        minimal_improvement);
+    do_solve(problem,
+             &problem.start_point(),
+             &problem.end_point(),
+             Some(shortest_points),
+             distance_cheat,
+             minimal_improvement
+    );
 }
 
-fn solve_without_cheating(problem: &Problem, start_pos: &Point, end_pos: &Point) -> Option<usize> {
+fn do_solve(problem: &Problem,
+            start_pos: &Point,
+            end_pos: &Point,
+            pre_calculated_best_routes: Option<HashMap<Point, Option<usize>>>,
+            distance_cheat: usize,
+            minimal_improvement: usize) -> Option<usize> {
 
     if problem.get_char_on_point(start_pos) == Some('#') {
         return None
@@ -42,6 +58,8 @@ fn solve_without_cheating(problem: &Problem, start_pos: &Point, end_pos: &Point)
     let mut lb = None;
     let mut ubs: HashMap<Point, usize> =  HashMap::new();
 
+    let mut lbs_cheats: HashMap<Cheat, usize>  = HashMap::new();
+
     while let Some(state) = to_do.pop() {
         let location = state.position.clone();
         let path_len = state.length.clone();
@@ -54,6 +72,7 @@ fn solve_without_cheating(problem: &Problem, start_pos: &Point, end_pos: &Point)
             continue;
         }
         let directions = [Direction::North, Direction::South, Direction::East, Direction::West];
+
         let next_states =
             directions.iter()
                       .map(|direction| {
@@ -69,113 +88,52 @@ fn solve_without_cheating(problem: &Problem, start_pos: &Point, end_pos: &Point)
                       })
                      .collect::<Vec<State>>();
 
+        if pre_calculated_best_routes.is_some() {
+
+            let possible_exit_and_next_points =
+                problem.find_all_cheat_exits_and_next_point_for_entry_point(&state.position,
+                                                                            distance_cheat);
+
+            for possible_exit_and_next_point in possible_exit_and_next_points {
+
+                let cheat: Cheat = (location.clone(),
+                                    possible_exit_and_next_point.clone());
+                let current_lb = lbs_cheats.get(&cheat).unwrap_or(&usize::MAX);
+
+                let cheating_distance =
+                    pre_calculated_best_routes.as_ref()
+                                              .unwrap()
+                                              .get(&possible_exit_and_next_point)
+                                              .unwrap();
+                if cheating_distance.is_none() {
+                    continue;
+                }
+                let cheating_distance = cheating_distance.unwrap();
+
+                let my_result =
+                    state.length +
+                    possible_exit_and_next_point.clone().distance(&location) +
+                    cheating_distance;
+
+                lbs_cheats.insert(cheat, min(my_result, *current_lb));
+            }
+        }
+
        next_states.into_iter().for_each(|state| {
            ubs.insert(state.position.clone(), state.length.clone());
            to_do.push(state);
        })
     }
 
+    if pre_calculated_best_routes.is_some() {
+
+        let res = lbs_cheats.values()
+                                  .filter(|v|lb.unwrap() >= *v + minimal_improvement)
+                                  .count();
+        println!("How many cheats would save you at least {} picoseconds? {}", minimal_improvement, res);
+    }
+
     lb
-}
-
-fn solve_with_cheating(problem: &Problem,
-                       pre_calculated_best_routes: &HashMap<Point, Option<usize>>,
-                       distance_cheat: usize,
-                       minimal_improvement: usize)  {
-    let start_pos = problem.start_point();
-
-    let end_pos = problem.end_point();
-
-    let start_state = State::new(start_pos.clone(),
-                                 0,
-                                 start_pos.clone().distance(&end_pos));
-
-    let base_cost = pre_calculated_best_routes.get(&start_pos).unwrap().unwrap();
-
-    let mut to_do: BinaryHeap<State> = BinaryHeap::new();
-    to_do.push(start_state);
-
-    let mut effective_cheats : HashMap<Cheat, usize>= HashMap::new();
-
-    let mut lb = None;
-    let mut ubs: HashMap<Point, usize> =  HashMap::new();
-
-    while let Some(state) = to_do.pop() {
-        //println!("Considering {:?}", state);
-
-
-        let location = state.position.clone();
-        let path_len = state.length.clone();
-
-        if location == end_pos {
-            if lb.is_none() {
-                lb = Some(path_len);
-            }
-            lb = Some(min(path_len, lb.unwrap()));
-            continue;
-        }
-        let directions = [Direction::North, Direction::South, Direction::East, Direction::West];
-
-        let next_states =
-            directions.iter()
-                .map(|direction| {
-                    let next_pos = location.add(&direction.to_dx_dy());
-                    State::new(next_pos.clone(),
-                               state.length + 1,
-                               next_pos.distance(&end_pos))
-                })
-                .filter(|state| {
-                    problem.is_on_map(&state.position)
-                        && problem.get_char_on_point(&state.position) != Some('#')
-                        && &state.length < ubs.get(&state.position).unwrap_or(&usize::MAX)
-                })
-                .collect::<Vec<State>>();
-
-        next_states.into_iter().for_each(|state| {
-            ubs.insert(state.position.clone(), state.length.clone());
-            to_do.push(state);
-        });
-
-        let opportunities_for_cheating_exits =
-            directions.iter()
-                      .map(|direction| location.add(&direction.to_dx_dy()))
-                      .filter(|point| problem.get_char_on_point(point) == Some('#'))
-                      .flat_map(|point| {
-                            problem.find_all_cheats_from_a_point(&point, distance_cheat)
-                                .into_iter()
-                                .map(move |p2| (point.clone(), p2))
-                       })
-                      .collect::<Vec<Cheat>>();
-
-        for (start, exit) in opportunities_for_cheating_exits {
-
-            let cost =
-                path_len + 1 + start.distance(&exit) + pre_calculated_best_routes.get(&exit).unwrap().unwrap();
-            if cost + minimal_improvement <= base_cost {
-                println!("found a cheat for {:?}", (&start, &exit));
-                effective_cheats.insert((start, exit), base_cost - cost);
-            }
-        }
-    }
-
-    let x = effective_cheats.values().map(|v|*v).collect::<Vec<usize>>();
-
-    let mut counts = HashMap::new();
-    for value in x {
-        *counts.entry(value).or_insert(0) += 1;
-    }
-
-    // Collect the counts into a vector and sort by value (key)
-    let mut sorted_counts: Vec<(usize, usize)> = counts.into_iter().collect();
-    sorted_counts.sort_by_key(|&(value, _)| value);
-
-    // Print the counts in ascending order
-    for (value, count) in sorted_counts {
-        println!("There are {} cheats that save {} picoseconds", count, value);
-    }
-
-    let res = effective_cheats.len();
-    println!("How many cheats would save you at least 100 picoseconds? {}", res);
 }
 
 #[derive(Clone)]
@@ -236,53 +194,16 @@ impl Problem {
         self.iter_points().find(|p| self.get_char_on_point(p) == Some('E')).unwrap()
     }
 
-    fn find_all_cheats_from_a_point(&self, origin_point: &Point, max_distance: usize) -> Vec<Point> {
-
-        let mut queue: VecDeque<(Vec<Point>, Direction)> = VecDeque::new();
-        let mut candidates : Vec<Vec<Point>> = Vec::new();
-
-        queue.push_back((vec![origin_point.clone()], Direction::North));
-        queue.push_back((vec![origin_point.clone()], Direction::South));
-        queue.push_back((vec![origin_point.clone()], Direction::West));
-        queue.push_back((vec![origin_point.clone()], Direction::East));
-
-        while let Some((points, direction)) = queue.pop_front() {
-            let next_point = points.last().unwrap().clone().add(&direction.to_dx_dy());
-
-            let is_a_possible_cheat =
-                self.is_on_map(&next_point)
-                && { let res = solve_without_cheating(self, origin_point, &next_point);
-                     res.is_none() || res.unwrap() > next_point.distance(origin_point) };
-
-            if !is_a_possible_cheat {
-                continue;
-            }
-
-            let mut next = points.clone();
-            next.push(next_point.clone());
-            candidates.push(next.clone());
-
-            if candidates.len() < max_distance - 2 {
-                direction.others().iter().for_each(|direction| {
-                    queue.push_back((next.clone(), direction.clone()));
-                })
-            }
-        }
-
-        let r: HashSet<Point> =
-            candidates.into_iter()
-                   .filter(|p|{
-                        self.get_char_on_point(p.last().unwrap()).unwrap() != '#'
-                        && (p.len() < 2 || self.get_char_on_point(&p[p.len() - 2]).unwrap() == '#')
-                   })
-                .map(|p| p.last().unwrap().clone())
-                .collect();
-
-        let r = r.into_iter().collect();
-
-
-
-        r
+    fn find_all_cheat_exits_and_next_point_for_entry_point(&self,
+                                                           entry_point: &Point,
+                                                           max_distance: usize) -> Vec<Point> {
+        self.iter_points()
+            .filter(|p| {
+                self.get_char_on_point(p) != Some('#')
+                     && entry_point.distance(p) <= max_distance
+                     && entry_point.distance(p) >= 1
+            })
+            .collect::<Vec<Point>>()
     }
 
 }
@@ -337,23 +258,6 @@ impl Direction {
             Direction::South => Point::new(0, -1),
             Direction::East => Point::new(1, 0),
             Direction::West => Point::new(-1, 0),
-        }
-    }
-
-    fn others(&self) -> Vec<Direction> {
-        match self {
-            Direction::North => {
-                vec![Direction::East, Direction::South, Direction::West]
-            },
-            Direction::East => {
-                vec![Direction::North, Direction::South, Direction::West]
-            },
-            Direction::South => {
-                vec![Direction::North, Direction::East, Direction::West]
-            },
-            Direction::West => {
-                vec![Direction::North, Direction::East, Direction::South]
-            },
         }
     }
 }
