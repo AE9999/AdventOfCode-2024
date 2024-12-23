@@ -1,9 +1,37 @@
-use std::cmp::min;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, BufRead};
 use std::env;
 use std::iter::repeat;
+use once_cell::sync::Lazy;
+
+static MAIN_CONSOLE_BUTTONS_TO_LOCATIONS: Lazy<HashMap<char, Point>> = Lazy::new(|| {
+    HashMap::from([
+        ('0', Point::new(1, 0)),
+        ('A', Point::new(2, 0)),
+        ('1', Point::new(0, 1)),
+        ('2', Point::new(1, 1)),
+        ('3', Point::new(2, 1)),
+        ('4', Point::new(0, 2)),
+        ('5', Point::new(1, 2)),
+        ('6', Point::new(2, 2)),
+        ('7', Point::new(0, 3)),
+        ('8', Point::new(1, 3)),
+        ('9', Point::new(2, 3)),
+    ])
+});
+
+static SECONDARY_CONSOLE_BUTTONS_TO_LOCATIONS: Lazy<HashMap<char, Point>> = Lazy::new(|| {
+    HashMap::from([
+        ('<', Point::new(0, 0)),
+        ('v', Point::new(1, 0)),
+        ('>', Point::new(2, 0)),
+
+        ('^', Point::new(1, 1)),
+        ('A', Point::new(2, 1)),
+    ])
+});
+
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -30,126 +58,218 @@ fn solve1( problem: &Problem) {
 
 fn calculate_quickest_path(code: &Vec<char>) -> usize {
 
-    let step1 = calculate_quickest_path_on_first_console(code);
-    println!("Step 1: {:?}", step1.iter().collect::<String>());
-    let step2 = calculate_path_on_redirect_console(&step1);
-    println!("Step 2: {:?}", step2.iter().collect::<String>());
-    let step3 = calculate_path_on_redirect_console(&step2);
-    println!("Step 3: {:?}", step3.iter().collect::<String>());
-    step3.len()
+    let step1_options = calculate_quickest_path_on_first_console(code);
+
+    let min =
+        step1_options.iter()
+                     .map(|sequence_1| {
+                         let step2_options =
+                             calculate_path_on_redirect_console(sequence_1, true);
+                         step2_options.iter().map(
+                             |sequence_2| {
+                                 let step3 = calculate_path_on_redirect_console(sequence_2,
+                                                                                false);
+                                 // println!("Step 3: len {} ..", step3.get(0).unwrap().len());
+                                 step3.get(0).unwrap().len()
+                             }
+                         ).min().unwrap()
+                     }).min().unwrap();
+
+    min
 }
 
-fn calculate_quickest_path_on_first_console(code: &Vec<char>) -> Vec<char> {
-    let buttons_to_locations: HashMap<char, Point> = HashMap::from([
-        ('0', Point::new(1, 0)),
-        ('A', Point::new(2, 0)),
-        ('1', Point::new(0, 1)),
-        ('2', Point::new(1, 1)),
-        ('3', Point::new(2, 1)),
-        ('4', Point::new(0, 2)),
-        ('5', Point::new(1, 2)),
-        ('6', Point::new(2, 2)),
-        ('7', Point::new(0, 3)),
-        ('8', Point::new(1, 3)),
-        ('9', Point::new(2, 3)),
-    ]);
+fn calculate_quickest_path_on_first_console(code: &Vec<char>) -> Vec<Vec<char>> {
+    do_calculate_quickest_path_on_first_console(code,
+                                                0,
+                                                MAIN_CONSOLE_BUTTONS_TO_LOCATIONS.get(&'A').unwrap().clone(),
+                                                Vec::new())
+}
 
-    let mut inputs = Vec::new();
+fn do_calculate_quickest_path_on_first_console(code: &Vec<char>,
+                                               mut index: usize,
+                                               mut location_of_robot: Point,
+                                               mut current_path: Vec<char>) -> Vec<Vec<char>> {
+    let mut res = Vec::new();
 
-    let mut location_of_robot: Point = buttons_to_locations.get(&'A').unwrap().clone();
+    while index < code.len() {
+        let c = &code[index];
 
-    let mut last_index = 0;
-
-    for c in code {
-        println!("calculating: {}  location_of_robot: {:?}",
-                 c,
-                 buttons_to_locations.iter().find((|(k,v)| v == &&location_of_robot)).unwrap());
-        let dest = buttons_to_locations.get(&c).unwrap();
-
+        let dest = MAIN_CONSOLE_BUTTONS_TO_LOCATIONS.get(&c).unwrap();
         let dx = dest.x - location_of_robot.x;
         let dy = dest.y - location_of_robot.y;
 
-        if dy < 0 && dy.abs() >= location_of_robot.y  && location_of_robot.x == 0 {
+        let force_x = dy < 0 && dy.abs() >= location_of_robot.y  && location_of_robot.x == 0;
+        let force_y = dx < 0 && dx.abs() >= location_of_robot.x && location_of_robot.y == 0;
+
+        if force_x {
             location_of_robot = location_of_robot.add(&Point::new(1, 0));
-            inputs.push('>');
-        }
+            let dx = dest.x - location_of_robot.x;
+            let dy = dest.y - location_of_robot.y;
+            current_path.push('>');
 
-        if dx < 0 && dx.abs() >= location_of_robot.x && location_of_robot.y == 0 {
+            let presses = if dx > 0 { '>' } else { '<' };
+            current_path.extend(repeat(presses).take(dx.abs() as usize));
+
+            let presses = if dy > 0 { '^' } else { 'v' };
+            current_path.extend(repeat(presses).take(dy.abs() as usize));
+
+            current_path.push('A');
+            location_of_robot = dest.clone();
+        } else if force_y {
             location_of_robot = location_of_robot.add(&Point::new(0, 1));
-            inputs.push('^');
+            let dx = dest.x - location_of_robot.x;
+            let dy = dest.y - location_of_robot.y;
+            current_path.push('^');
+
+            let presses = if dy > 0 { '^' } else {'v' };
+            current_path.extend(repeat(presses).take(dy.abs() as usize));
+
+            let presses = if dx > 0 { '>' } else {'<' };
+            current_path.extend(repeat(presses).take(dx.abs() as usize));
+
+            current_path.push('A');
+            location_of_robot = dest.clone();
+        } else {
+            let mut loption = current_path.clone();
+
+            let presses = if dy > 0 { '^' } else {'v' };
+            loption.extend(repeat(presses).take(dy.abs() as usize));
+            let presses = if dx > 0 { '>' } else {'<' };
+            loption.extend(repeat(presses).take(dx.abs() as usize));
+            loption.push('A');
+            let first_answer = do_calculate_quickest_path_on_first_console(code,
+                                                                           index + 1,
+                                                                           dest.clone(),
+                                                                           loption);
+
+            let mut roption = current_path.clone();
+            let presses = if dx > 0 { '>' } else {'<' };
+            roption.extend(repeat(presses).take(dx.abs() as usize));
+            let presses = if dy > 0 { '^' } else {'v' };
+            roption.extend(repeat(presses).take(dy.abs() as usize));
+            roption.push('A');
+            let second_answer = do_calculate_quickest_path_on_first_console(code,
+                                                                            index + 1,
+                                                                            dest.clone(),
+                                                                            roption);
+
+            res.extend(first_answer.into_iter());
+            res.extend(second_answer.into_iter());
+            return res
         }
-
-        let dx = dest.x - location_of_robot.x;
-        let presses = if dx > 0 { '>' } else {'<' };
-        inputs.extend(repeat(presses).take(dx.abs() as usize));
-
-        let dy = dest.y - location_of_robot.y;
-        let presses = if dy > 0 { '^' } else {'v' };
-        inputs.extend(repeat(presses).take(dy.abs() as usize));
-
-        inputs.push('A');
-        location_of_robot = dest.clone();
-
-        println!("inputs: {}", inputs.iter().skip(last_index).collect::<String>());
-        last_index = inputs.len();
+        index += 1;
     }
-
-    inputs
+    res.push(current_path);
+    res
 }
 
-fn calculate_path_on_redirect_console(code: &Vec<char>) -> Vec<char> {
-    let buttons_to_locations: HashMap<char, Point> = HashMap::from([
-        ('<', Point::new(0, 0)),
-        ('v', Point::new(1, 0)),
-        ('>', Point::new(2, 0)),
+fn calculate_path_on_redirect_console(code: &Vec<char>,
+                                      explore_all: bool) -> Vec<Vec<char>> {
 
-        ('^', Point::new(1, 1)),
-        ('A', Point::new(2, 1)),
+    // println!("redirect: {:?}, explore all: {}", code, explore_all);
 
-    ]);
+    let location_of_robot: Point = SECONDARY_CONSOLE_BUTTONS_TO_LOCATIONS.get(&'A').unwrap().clone();
 
-    let mut inputs = Vec::new();
+    do_calculate_path_on_redirect_console(code, 0, location_of_robot, Vec::new(), explore_all)
+}
 
-    let mut location_of_robot: Point = buttons_to_locations.get(&'A').unwrap().clone();
 
-    let mut last_index = 0;
+fn do_calculate_path_on_redirect_console(code: &Vec<char>,
+                                         mut index: usize,
+                                         mut location_of_robot: Point,
+                                         mut current_path: Vec<char>,
+                                         explore_all: bool) -> Vec<Vec<char>> {
+    let mut res = Vec::new();
 
-    for c in code {
-        println!("calculating: {}  location_of_robot: {:?}",
-                 c,
-                 buttons_to_locations.iter().find((|(k,v)| v == &&location_of_robot)).unwrap());
-        let dest = buttons_to_locations.get(&c).unwrap();
+    while index < code.len() {
+        let c = &code[index];
+
+        let dest = SECONDARY_CONSOLE_BUTTONS_TO_LOCATIONS.get(&c).unwrap();
 
         let dx = dest.x - location_of_robot.x;
         let dy = dest.y - location_of_robot.y;
 
-        if dy > 0 && dy.abs() >= location_of_robot.y  && location_of_robot.x == 0 {
+        let force_x = dy > 0 && dy.abs() >= location_of_robot.y  && location_of_robot.x == 0;
+        let force_y = dx < 0 && dx.abs() >= location_of_robot.x && location_of_robot.y == 1;
+
+        if force_x  {
             // println!("Adding '>' due to location_of_robot: {:?}, dest: {:?} dx: {}, dy: {}", location_of_robot, dest, dx, dy);
             location_of_robot = location_of_robot.add(&Point::new(1, 0));
-            inputs.push('>');
+            current_path.push('>');
+
+            let dx = dest.x - location_of_robot.x;
+            let dy = dest.y - location_of_robot.y;
+
+            let presses = if dx > 0 { '>' } else {'<' };
+            current_path.extend(repeat(presses).take(dx.abs() as usize));
+
+            let presses = if dy > 0 { '^' } else {'v' };
+            current_path.extend(repeat(presses).take(dy.abs() as usize));
+
+            current_path.push('A');
         }
 
-        if dx < 0 && dx.abs() >= location_of_robot.x && location_of_robot.y == 1 {
+        else if force_y  {
             // println!("Adding 'v' due to location_of_robot: {:?}, dest: {:?} dx: {}, dy: {}", location_of_robot, dest, dx, dy);
             location_of_robot = location_of_robot.add(&Point::new(0, -1));
-            inputs.push('v');
+            current_path.push('v');
+
+            let dx = dest.x - location_of_robot.x;
+            let dy = dest.y - location_of_robot.y;
+
+            let presses = if dy > 0 { '^' } else {'v' };
+            current_path.extend(repeat(presses).take(dy.abs() as usize));
+
+            let presses = if dx > 0 { '>' } else {'<' };
+            current_path.extend(repeat(presses).take(dx.abs() as usize));
+
+            current_path.push('A');
+        } else if ! explore_all {
+            let presses = if dx > 0 { '>' } else {'<' };
+            current_path.extend(repeat(presses).take(dx.abs() as usize));
+
+            let presses = if dy > 0 { '^' } else {'v' };
+            current_path.extend(repeat(presses).take(dy.abs() as usize));
+
+            current_path.push('A');
+        } else {
+            let mut loption = current_path.clone();
+
+            let presses = if dy > 0 { '^' } else {'v' };
+            loption.extend(repeat(presses).take(dy.abs() as usize));
+            let presses = if dx > 0 { '>' } else {'<' };
+            loption.extend(repeat(presses).take(dx.abs() as usize));
+            loption.push('A');
+            let first_answer = do_calculate_path_on_redirect_console(code,
+                                                                           index + 1,
+                                                                           dest.clone(),
+                                                                           loption,
+                                                                           explore_all);
+
+            let mut roption = current_path.clone();
+            let presses = if dx > 0 { '>' } else {'<' };
+            roption.extend(repeat(presses).take(dx.abs() as usize));
+            let presses = if dy > 0 { '^' } else {'v' };
+            roption.extend(repeat(presses).take(dy.abs() as usize));
+            roption.push('A');
+            let second_answer = do_calculate_path_on_redirect_console(code,
+                                                                            index + 1,
+                                                                            dest.clone(),
+                                                                            roption,
+                                                                            explore_all);
+
+            res.extend(first_answer.into_iter());
+            res.extend(second_answer.into_iter());
+            return res
         }
 
-        let dx = dest.x - location_of_robot.x;
-        let presses = if dx > 0 { '>' } else {'<' };
-        inputs.extend(repeat(presses).take(dx.abs() as usize));
-
-        let dy = dest.y - location_of_robot.y;
-        let presses = if dy > 0 { '^' } else {'v' };
-        inputs.extend(repeat(presses).take(dy.abs() as usize));
-
-        inputs.push('A');
-        println!("inputs: {}", inputs.iter().skip(last_index).collect::<String>());
-        last_index = inputs.len();
         location_of_robot = dest.clone();
+
+        index += 1;
     }
 
-    inputs
+    res.push(current_path);
+    res
 }
 
 struct Problem {
