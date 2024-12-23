@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufReader, BufRead};
 use std::env;
+use itertools::Itertools;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -10,6 +11,7 @@ fn main() -> io::Result<()> {
     let problem = read_input(input)?;
 
     solve1(&problem);
+    solve2(&problem);
 
     Ok(())
 }
@@ -31,6 +33,56 @@ fn solve1(problem: &Problem) {
     println!("How many contain at least one computer with a name that starts with 't'? {}", res);
 }
 
+fn solve2(problem: &Problem) {
+    let connections = problem.nodes_to_connected();
+
+    let mut ub  = connections.values().map(|v| v.len()).max().unwrap();
+    loop {
+        let clique = connections.keys().find_map(|k| {
+            find_cliques_of_size_n(k, &connections, ub)
+        });
+
+        if let Some(clique) = clique {
+            println!("What is the password to get into the LAN party? {}", clique);
+            break;
+        }
+        if ub == 1 {
+            panic!("A clique of size 1 is trivial, your code sucks!")
+        }
+
+        ub -= 1;
+    }
+}
+
+fn find_cliques_of_size_n(key: &String,
+                          connections: &HashMap<String, HashSet<String>>,
+                          n: usize) -> Option<String> {
+    let clique_candidates = connections.get(key)?;
+
+    if clique_candidates.len() < (n - 1) {
+        return None;
+    }
+
+    for combo in clique_candidates.iter().combinations(n - 1) {
+        let all_connected = combo.iter().all(|&node| {
+            let neighbors_of_node = connections.get(node).unwrap();
+            combo.iter().all(|&other| {
+                node == other || neighbors_of_node.contains(other)
+            })
+        });
+
+        if all_connected {
+            let mut clique: Vec<String> = Vec::new();
+            clique.push(key.to_string());
+            clique.extend(combo.into_iter().map(String::to_string));
+            clique.sort();
+            return Some(clique.join(","));
+        }
+    }
+
+    None
+}
+
 fn find_cliques_of_size_3(key: &String,
                           connections: &HashMap<String, HashSet<String>>) -> HashSet<String> {
     let clique_candidates =  connections.get(key).unwrap();
@@ -41,7 +93,7 @@ fn find_cliques_of_size_3(key: &String,
             intersection.map( |third| {
                 let mut x = vec![key.clone(), clique_candidate.clone(), third.clone()];
                 x.sort();
-                x.join("-")
+                x.join(",")
             })
         }).collect();
     cliques
