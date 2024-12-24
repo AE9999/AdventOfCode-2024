@@ -34,7 +34,6 @@ fn solve2(problem: &Problem) {
 
     let price_difference = generate_price_differences(&secrets);
 
-
     let res = generate_combinations().map(|sequence| {
         apply_sequence_to_problem(&sequence,
                                   &secrets,
